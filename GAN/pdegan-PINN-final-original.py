@@ -1,3 +1,9 @@
+
+###  THIS CODE IS ORIGINALLY FROM https://github.com/dbgannon/NNets-and-Diffeqns.
+###  AND HERE FOR REFERENCE PURPOSES
+
+
+
 # This is the GenerativeAdesarialNetwork GAN for solving 
 # the non-linear stochastic PDEs.
 # actually this example is not full stochastic because it uses the solution
