@@ -97,12 +97,11 @@ def get_noise_tensor(size:int)->np.ndarray:
 
 batch_size = 20
 num_batches = 20
-LAMBDA = 0.1
+LAMBDA = 10.0
 
 vxn  = 1000 # number of points
 vx =np.linspace(0, np.pi, vxn)  # 2000 evenly spaced points between 0 and pi
 
-btches = [] # will consist of random points from vx
 real_data_batches = [] # will consist of random points x, u(x), and f(x)
 for i in range(num_batches): # for i = 0 to 20
     b = random.choices(vx,k=batch_size) # 20 random points from vx with replacement
@@ -119,8 +118,6 @@ for i in range(num_batches): # for i = 0 to 20
     # Concatenates the given sequence of seq tensors in the given dimension. 
     # All tensors must either have the same shape (except in the concatenating dimension) or be empty.
     real_data_batches.append(torch.cat((ib, ub0, ifb),1)) 
-    btches.append(ib) # adds ib (20 random points from vx with replacement) into a list
-
 
 for i in range(num_batches):
     x = real_data_batches[i][:, 0].detach().numpy()
@@ -164,7 +161,7 @@ betas = (0.0, 0.9)
 optimizerD = optim.Adam(dis.parameters(), lr=lr, betas=betas)
 optimizerG = optim.Adam(gen.parameters(), lr=lr, betas=betas)
 
-for epoch in range(num_epochs): # for epoch in range 0 to 20000
+for epoch in range(num_epochs):
 
     for _ in range(critic_iter):
 
@@ -192,8 +189,7 @@ for epoch in range(num_epochs): # for epoch in range 0 to 20000
         gradient_penalty = calc_gradient_penalty(dis, real_data, fake_data)
         gradient_penalty.backward()
 
-        dis_loss = torch.mean(fake_output - real_output + gradient_penalty)
-        # dis_loss = -torch.mean(real_output) + torch.mean(fake_output) + gradient_penalty
+        dis_loss = torch.mean(fake_output) - torch.mean(real_output) + gradient_penalty
         # dis_loss.backward(retain_graph = True) 
 
         optimizerD.step()
@@ -229,19 +225,19 @@ for epoch in range(num_epochs): # for epoch in range 0 to 20000
     #     torch.save(gen.state_dict(), 'wgan'+str(epoch))
 
 
-for i in range(0,100):
+for i in range(batch_size):
     # noise = torch.randn(batch_size, 1) 
     noisev = autograd.Variable(get_noise_tensor(batch_size))  # totally freeze netG
     noisev.requires_grad=True
     fout = gen(noisev)
     z = fout.detach().numpy()
 
-    for j in range(int(batch_size)):
+    for j in range(batch_size):
         zx = z[j,0]
         zy = z[j,1]
         if -0.1 < zy < np.pi**2 and 0 <= zx <= np.pi:
             plt.scatter(zx, zy, c='orange', s=30)
 
 plt.title("WGAN-GP-" + str(num_epochs))
-# plt.savefig('./plots/wgan-gp/x-squared/wgan-gp-'+str(num_epochs)+'.png')
+# plt.savefig('./plots/wgan-gp-'+str(num_epochs)+'.png')
 plt.show()
