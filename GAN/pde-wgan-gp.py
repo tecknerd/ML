@@ -17,8 +17,8 @@ import torch.autograd as autograd
 from torch.autograd import grad
 # from utils.tensorboard_logger import Logger
 
-
 torch.manual_seed(1)
+torch.autograd.set_detect_anomaly(True)
 
 # defining generator class
 class generator(nn.Module):
@@ -153,7 +153,7 @@ gen = generator() # generator model
 one = torch.ones(batch_size,1)
 mone = -1 * torch.ones(batch_size,1)
 
-num_epochs = 5000
+num_epochs = 10
 critic_iter = 10
 lr = 5e-5
 betas = (0.0, 0.9)
@@ -172,7 +172,7 @@ for epoch in range(num_epochs):
         # Train with real
         real_output = dis(real_data)
         # real_out = torch.mean(real_output,0, False)
-        real_output.backward(mone)
+        # real_output.backward(mone)
 
         # Train with random noise
         noisev = get_noise_tensor(batch_size)
@@ -183,20 +183,21 @@ for epoch in range(num_epochs):
         fake_output = dis(fake_data)
         # fake_output = torch.mean(fake_output,0, False)
         # fake_output = fake_output.mean()
-        fake_output.backward(one)
+        # fake_output.backward(one)
 
         # train with gradient penalty
         gradient_penalty = calc_gradient_penalty(dis, real_data, fake_data)
-        gradient_penalty.backward()
+        # gradient_penalty.backward()
 
+        # gradient penalty is already averaged in the function calc_gradient_penalty()
         dis_loss = torch.mean(fake_output) - torch.mean(real_output) + gradient_penalty
-        # dis_loss.backward(retain_graph = True) 
+        dis_loss.backward() 
 
         optimizerD.step()
 
         # Clear optimizers
         optimizerG.zero_grad()
-        optimizerD.zero_grad()
+        # optimizerD.zero_grad()
         # gen.zero_grad()
         # dis.zero_grad()
 
@@ -207,18 +208,20 @@ for epoch in range(num_epochs):
     fake_output = dis(fake_data)
     # fake_output = fake_output.mean()
     # fake_output = torch.mean(fake_output,0, False)
-    fake_output.backward(mone)
+    # fake_output.backward(mone)
 
     # Calculate G's loss based on this output
     gen_loss = -torch.mean(fake_output)
     # gen_loss.backward(retain_graph=True)
+    gen_loss.backward()
+
 
     # Update G
     optimizerG.step()
-    gen.zero_grad()
+    # gen.zero_grad()
 
-    if epoch % 10 == 0:        
-        print('Epoch: {}/{}; Critic_loss: {}; G_loss: {}' .format(epoch, num_epochs, dis_loss.data.numpy(), gen_loss.data.numpy()))
+    if epoch % 10 == 0 or epoch == num_epochs-1:        
+        print('Epoch: {}/{}; Critic_loss: {}; G_loss: {}' .format(epoch+1, num_epochs, dis_loss.data.numpy(), gen_loss.data.numpy()))
         # print('Iter-{}; D_loss: {}; G_loss: {}'.format(epoch, dis_loss.data.numpy(), gen_loss.data.numpy()), file=open('./wgan-out.txt','a'))
 
     # if epoch % 1000 == 0:
@@ -226,7 +229,6 @@ for epoch in range(num_epochs):
 
 
 for i in range(batch_size):
-    # noise = torch.randn(batch_size, 1) 
     noisev = autograd.Variable(get_noise_tensor(batch_size))  # totally freeze netG
     noisev.requires_grad=True
     fout = gen(noisev)
@@ -238,6 +240,11 @@ for i in range(batch_size):
         if -0.1 < zy < np.pi**2 and 0 <= zx <= np.pi:
             plt.scatter(zx, zy, c='orange', s=30)
 
+
+# Make the directory to save plots if it doesn't exits
+if not os.path.exists('plots'):
+    os.makedirs('plots')
+
 plt.title("WGAN-GP-" + str(num_epochs))
-# plt.savefig('./plots/wgan-gp-'+str(num_epochs)+'.png')
+plt.savefig('./plots1/wgan-gp-'+str(num_epochs)+'.png')
 plt.show()
