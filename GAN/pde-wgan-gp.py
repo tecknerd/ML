@@ -66,7 +66,7 @@ def u_true(x):
     return u
 
 def f_true(x):
-    f = 2*x
+    f = 4*x
     # f = np.sin(2.0*x)+2.0*x*np.cos(2*x)
     return f
 
@@ -97,7 +97,7 @@ def get_noise_tensor(size:int)->np.ndarray:
 
 batch_size = 20
 num_batches = 20
-LAMBDA = 10.0
+LAMBDA = 10
 
 vxn  = 1000 # number of points
 vx =np.linspace(0, np.pi, vxn)  # 2000 evenly spaced points between 0 and pi
@@ -153,13 +153,15 @@ gen = generator() # generator model
 one = torch.ones(batch_size,1)
 mone = -1 * torch.ones(batch_size,1)
 
-num_epochs = 10
+num_epochs = 5000
 critic_iter = 10
 lr = 5e-5
 betas = (0.0, 0.9)
 
 optimizerD = optim.Adam(dis.parameters(), lr=lr, betas=betas)
 optimizerG = optim.Adam(gen.parameters(), lr=lr, betas=betas)
+
+negative_critic_losses = []
 
 for epoch in range(num_epochs):
 
@@ -185,19 +187,19 @@ for epoch in range(num_epochs):
         # fake_output = fake_output.mean()
         # fake_output.backward(one)
 
-        # train with gradient penalty
+        # Calculate gradient penalty
         gradient_penalty = calc_gradient_penalty(dis, real_data, fake_data)
         # gradient_penalty.backward()
 
         # gradient penalty is already averaged in the function calc_gradient_penalty()
         dis_loss = torch.mean(fake_output) - torch.mean(real_output) + gradient_penalty
-        dis_loss.backward() 
+        dis_loss.backward(retain_graph=True) 
 
         optimizerD.step()
 
         # Clear optimizers
         optimizerG.zero_grad()
-        # optimizerD.zero_grad()
+        optimizerD.zero_grad()
         # gen.zero_grad()
         # dis.zero_grad()
 
@@ -212,16 +214,20 @@ for epoch in range(num_epochs):
 
     # Calculate G's loss based on this output
     gen_loss = -torch.mean(fake_output)
-    # gen_loss.backward(retain_graph=True)
-    gen_loss.backward()
+    gen_loss.backward(retain_graph=True)
+    # gen_loss.backward()
 
 
     # Update G
     optimizerG.step()
     # gen.zero_grad()
 
-    if epoch % 10 == 0 or epoch == num_epochs-1:        
-        print('Epoch: {}/{}; Critic_loss: {}; G_loss: {}' .format(epoch+1, num_epochs, dis_loss.data.numpy(), gen_loss.data.numpy()))
+
+    negative_critic_losses.append(-dis_loss.data.numpy())
+
+    if (epoch+1) % 10 == 0 or epoch == num_epochs-1:        
+        print('Epoch: {}/{}; Critic_loss: {}; G_loss: {}' 
+            .format(epoch+1, num_epochs, dis_loss.data.numpy(), gen_loss.data.numpy()))
         # print('Iter-{}; D_loss: {}; G_loss: {}'.format(epoch, dis_loss.data.numpy(), gen_loss.data.numpy()), file=open('./wgan-out.txt','a'))
 
     # if epoch % 1000 == 0:
@@ -234,7 +240,7 @@ for i in range(batch_size):
     fout = gen(noisev)
     z = fout.detach().numpy()
 
-    for j in range(batch_size):
+    for j in range(z.shape[0]):
         zx = z[j,0]
         zy = z[j,1]
         if -0.1 < zy < np.pi**2 and 0 <= zx <= np.pi:
@@ -246,5 +252,11 @@ if not os.path.exists('plots'):
     os.makedirs('plots')
 
 plt.title("WGAN-GP-" + str(num_epochs))
-plt.savefig('./plots1/wgan-gp-'+str(num_epochs)+'.png')
+# plt.savefig('./plots1/wgan-gp-'+str(num_epochs)+'-4x-retaingraph.png')
+plt.show()
+
+
+plt.figure(2)
+plt.plot(negative_critic_losses, '-o')
+# plt.savefig('./plots1/wgan-gp-'+str(num_epochs)+'-4x-retaingraph-losses.png')
 plt.show()
