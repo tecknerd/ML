@@ -3,6 +3,7 @@
 import numpy as np
 import scipy
 from scipy import spatial
+import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import torch
@@ -20,25 +21,36 @@ from torch.autograd import grad
 torch.manual_seed(1)
 torch.autograd.set_detect_anomaly(True)
 
+matplotlib.use("Agg")
+
+# Check if GPU is available 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Directory to save plots
+save_directory = './running-plots/'
+
 # defining generator class
 class generator(nn.Module):
     
     def __init__(self):
         
         super(generator, self).__init__()
-        self.l1 = nn.Linear(1,300)
-        self.l2 = nn.Linear(300,1000)
-        self.l3 = nn.Linear(1000,800)
-        self.l4 = nn.Linear(800,2)
-        self.rl = nn.Tanh()
-       
+
+        self.main = main = nn.Sequential(
+            nn.Linear(1, 1000),
+            nn.ReLU(),
+            nn.Linear(1000, 1000),
+            nn.ReLU(),
+            nn.Linear(1000, 1000),
+            nn.ReLU(),
+            nn.Linear(1000, 2)
+        )
         
     def forward(self, x):
-        z = self.rl(self.l1(x))
-        u = self.rl(self.l2(z))
-        u = self.rl(self.l3(u))
-        z = self.l4(u)
-        return z
+        x = x.to(device=device)
+        output = self.main(x)
+
+        return output
 
 
 class discriminator(nn.Module):
@@ -46,19 +58,24 @@ class discriminator(nn.Module):
     def __init__(self):
         
         super(discriminator, self).__init__()
-        self.l1 = nn.Linear(3,300)
-        self.relu = nn.LeakyReLU()
-        self.l2 = nn.Linear(300,300)
-        self.l3 = nn.Linear(300,200)
-        self.l4  = nn.Linear(200,1)
+
+        self.main = main = nn.Sequential(
+            nn.Linear(3, 1000),
+            nn.LeakyReLU(),
+            nn.Linear(1000, 1000),
+            nn.LeakyReLU(),
+            nn.Linear(1000, 1000),
+            nn.LeakyReLU(),
+            nn.Linear(1000, 1)
+        )
         
     def forward(self, z):
-        u = self.relu(self.l1(z))
-        u = self.relu(self.l2(u))
-        u = self.relu(self.l3(u))
-        out = self.l4(u)
- 
-        return out
+        z = z.to(device=device)
+        output = self.main(z)
+
+        return output
+
+
 
 def u_true(x):
     u = x**2
@@ -87,7 +104,10 @@ def Du(x,u):
     f = u_xx
     return f
 
-def get_noise_tensor(size:int)->np.ndarray:
+
+def get_noise_tensor(size:int)-> np.ndarray:
+    ''' Creates a tensor of random points from an normal distribution'''
+
     noise = torch.randn(batch_size*1,1) # create some random noise
     noisev = torch.FloatTensor(noise).reshape(batch_size,1) # make noise into a tensor
     noisev.requires_grad=True
@@ -95,16 +115,58 @@ def get_noise_tensor(size:int)->np.ndarray:
     return noisev
 
 
+def check_directory_else_make(dir: str)-> None:
+    '''
+        Checks if the directory exists.
+        Creates the directory if it doesn't.
+    '''
+    if not os.path.exists(dir):
+        os.makedirs(dir)
+
+
+def make_plot(real_data, fdata, num_batches, epoch, num_epochs, noise)-> None:
+    ''' Plots the real and generated data points'''
+
+    # plot the real data
+    for i in range(num_batches):
+        x = real_data_batches[i][:, 0].detach().numpy()
+        y = real_data_batches[i][:, 1].detach().numpy()
+        plt.scatter(x,y, color = 'b', s=5)
+
+    # plot the generated data
+    for index, value in enumerate(fdata[:,1]):
+        if -0.1 < value < 1.1:
+
+            # plots noise as x-value vs. generated u-value
+            plt.scatter(noise[index], value, c='orange', s=5)
+
+            # plots generated x-value vs. generated u-value
+            # plt.scatter(fdata[index,0], value, c='green', s=5)
+
+
+
+    # Make the directory to save plots if it doesn't exits
+    check_directory_else_make(save_directory)
+    
+    # save plot to directory
+    plt.title("WGAN-GP-" + str(num_epochs))
+    plt.savefig(save_directory+str(num_epochs)+'-iter-'+str(epoch))
+    plt.figure().clear()
+
+
 batch_size = 20
 num_batches = 20
-LAMBDA = 10
 
-vxn  = 1000 # number of points
-vx =np.linspace(0, np.pi, vxn)  # 2000 evenly spaced points between 0 and pi
+LAMBDA = 10 # The gradient penalty coefficient 
+
+vxn  = 10000 # number of points
+vx =np.linspace(-1, 1, vxn)  # creates evenly spaces points
 
 real_data_batches = [] # will consist of random points x, u(x), and f(x)
+
+# Creates batches of real data points with the form x, u(x), and f(x)
 for i in range(num_batches): # for i = 0 to 20
-    b = random.choices(vx,k=batch_size) # 20 random points from vx with replacement
+    b = np.array(random.choices(vx,k=batch_size)) # 20 random points from vx with replacement
     bar = np.array(b) # turns b into array of 20 points
     ub = u_true(bar) 
     fb = f_true(bar) 
@@ -119,16 +181,19 @@ for i in range(num_batches): # for i = 0 to 20
     # All tensors must either have the same shape (except in the concatenating dimension) or be empty.
     real_data_batches.append(torch.cat((ib, ub0, ifb),1)) 
 
-for i in range(num_batches):
-    x = real_data_batches[i][:, 0].detach().numpy()
-    y = real_data_batches[i][:, 1].detach().numpy()
-    plt.scatter(x,y, color = 'b', s=5)
 
 # the followning adapted from https://github.com/caogang/wgan-gp/blob/master/gan_toy.py 
 # by Marvin Cao
 def calc_gradient_penalty(netD, real_data, fake_data):
+    ''' Calculates the gradient penalty.
+
+        netD: the discriminator/critic model
+        real_data: real data points
+        fake_data: fake data points
+    
+    '''
     alpha = torch.rand(batch_size, 1)
-    alpha = alpha.expand(real_data.size())
+    alpha = alpha.expand(real_data.size()).to(device=device)
 
     interpolates = alpha * real_data + ((1 - alpha) * fake_data)
 
@@ -138,125 +203,117 @@ def calc_gradient_penalty(netD, real_data, fake_data):
 
     gradients = autograd.grad(outputs=disc_interpolates, inputs=interpolates,
                               grad_outputs=torch.ones(
-                                  disc_interpolates.size()),
+                                  disc_interpolates.size()).to(device=device),
                               create_graph=True, retain_graph=True, only_inputs=True)[0]
 
+    # tensor.norm is depricated and might be removed from future releases.
+    # Need to update this next line to use torch.linalg
     gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean() * LAMBDA
     return gradient_penalty
 
 
-dis = discriminator() # discriminator model
-gen = generator() # generator model
+num_epochs = 20000
 
-# one = torch.FloatTensor([1])
-# mone = one * -1
-one = torch.ones(batch_size,1)
-mone = -1 * torch.ones(batch_size,1)
+# Number of times to train the discriminator/ critic before training the generator
+critic_iter = 10 
 
-num_epochs = 5000
-critic_iter = 10
-lr = 5e-5
-betas = (0.0, 0.9)
+# learning rate
+lr = 5e-5 
+betas = (0, 0.5)
 
+# discriminator model
+dis = discriminator().to(device=device) 
+
+ # generator model
+gen = generator().to(device=device)
+
+# optimizer for the discriminator/critic
 optimizerD = optim.Adam(dis.parameters(), lr=lr, betas=betas)
+
+# optimizer for the generator
 optimizerG = optim.Adam(gen.parameters(), lr=lr, betas=betas)
 
-negative_critic_losses = []
+# negative_critic_losses = []
 
+# Trains the model 
 for epoch in range(num_epochs):
 
     for _ in range(critic_iter):
-
+        ################################
+        ## Train Discriminator/Critic ##
+        ################################
+        
         # Get real data
         i = random.randint(0,num_batches-1) # pick a random integer
-        real_data = real_data_batches[i] # pick a real data point consisting of x, u(x), and f(x)
+        real_data = real_data_batches[i].to(device=device) # pick a real data point consisting of x, u(x), and f(x)
+        
+        # Train with random noise
+        noisev = get_noise_tensor(batch_size)
+        
+        # Clear gradient for generator
+        gen.zero_grad()
+        gen_data  = gen(noisev)
+
+        fout = Du(noisev, gen_data[:,1]).to(device=device)
+        fake_data = torch.cat((gen_data, fout),1).to(device=device)
+        fake_output = dis(fake_data)
+
+        # Clear gradient for discriminator/critic
+        dis.zero_grad()
 
         # Train with real
         real_output = dis(real_data)
-        # real_out = torch.mean(real_output,0, False)
-        # real_output.backward(mone)
-
-        # Train with random noise
-        noisev = get_noise_tensor(batch_size)
-        gen_data  = gen(noisev) 
-        fout = Du(noisev, gen_data[:,1])
-        fake_data = torch.cat((gen_data, fout),1)
-
-        fake_output = dis(fake_data)
-        # fake_output = torch.mean(fake_output,0, False)
-        # fake_output = fake_output.mean()
-        # fake_output.backward(one)
-
+        
         # Calculate gradient penalty
         gradient_penalty = calc_gradient_penalty(dis, real_data, fake_data)
-        # gradient_penalty.backward()
 
         # gradient penalty is already averaged in the function calc_gradient_penalty()
-        dis_loss = torch.mean(fake_output) - torch.mean(real_output) + gradient_penalty
-        dis_loss.backward(retain_graph=True) 
+        dis_loss = fake_output - real_output + gradient_penalty
+        dis_loss = dis_loss.mean()
+        dis_loss.backward() 
+
 
         optimizerD.step()
 
-        # Clear optimizers
-        optimizerG.zero_grad()
-        optimizerD.zero_grad()
-        # gen.zero_grad()
-        # dis.zero_grad()
 
+    #####################
+    ## Train Generator ##
+    #####################
+
+    # Clear gradient
+    gen.zero_grad() 
     noisev = get_noise_tensor(batch_size)
     gen_data  = gen(noisev) # pass random noise with to generator
-    fout = Du(noisev, gen_data[:,1])
+    fout = Du(noisev, gen_data[:,1]).to(device=device)
     fake_data = torch.cat((gen_data, fout),1)
     fake_output = dis(fake_data)
-    # fake_output = fake_output.mean()
-    # fake_output = torch.mean(fake_output,0, False)
-    # fake_output.backward(mone)
 
     # Calculate G's loss based on this output
-    gen_loss = -torch.mean(fake_output)
-    gen_loss.backward(retain_graph=True)
-    # gen_loss.backward()
-
+    gen_loss = -fake_output.mean()
+    gen_loss.backward()
 
     # Update G
     optimizerG.step()
-    # gen.zero_grad()
 
-
-    negative_critic_losses.append(-dis_loss.data.numpy())
+    # negative_critic_losses.append(-dis_loss.data.numpy())
 
     if (epoch+1) % 10 == 0 or epoch == num_epochs-1:        
         print('Epoch: {}/{}; Critic_loss: {}; G_loss: {}' 
-            .format(epoch+1, num_epochs, dis_loss.data.numpy(), gen_loss.data.numpy()))
+            .format(epoch+1, num_epochs, dis_loss.to(device='cpu').data.numpy(), gen_loss.to(device='cpu').data.numpy()))
         # print('Iter-{}; D_loss: {}; G_loss: {}'.format(epoch, dis_loss.data.numpy(), gen_loss.data.numpy()), file=open('./wgan-out.txt','a'))
 
-    # if epoch % 1000 == 0:
-    #     torch.save(gen.state_dict(), 'wgan'+str(epoch))
+    # Make plots every few iterations.  Originally had it at every 10 iterations.
+    if (epoch+1) % 100 == 0 or epoch == num_epochs-1:   
+        # Create noise and generated data to plot
+        stacked_noise = np.empty([0,0])
+        stacked_data = np.empty([0,0])
+        for i in range(batch_size):
+            noisev = get_noise_tensor(batch_size)
+            noisev.requires_grad=True
+            fout = gen(noisev)
+            z = fout.to(device='cpu').detach().numpy()
 
-
-for i in range(batch_size):
-    noisev = autograd.Variable(get_noise_tensor(batch_size))  # totally freeze netG
-    noisev.requires_grad=True
-    fout = gen(noisev)
-    z = fout.detach().numpy()
-
-    for j in range(z.shape[0]):
-        zx = z[j,0]
-        zy = z[j,1]
-        if -0.1 < zy < np.pi**2 and 0 <= zx <= np.pi:
-            plt.scatter(zx, zy, c='orange', s=30)
-
-
-# Make the directory to save plots if it doesn't exits
-if not os.path.exists('plots'):
-    os.makedirs('plots')
-
-plt.title("WGAN-GP-" + str(num_epochs))
-# plt.savefig('./plots1/wgan-gp-'+str(num_epochs)+'-4x-retaingraph.png')
-plt.show()
-
-
-plt.figure(2)
-plt.plot(negative_critic_losses, '-o')
-# plt.savefig('./plots1/wgan-gp-'+str(num_epochs)+'-4x-retaingraph-losses.png')
-plt.show()
+            stacked_noise = noisev.detach().numpy() if i == 0 else np.vstack((stacked_noise, noisev.detach().numpy()))
+            stacked_data = z if i == 0 else np.vstack((stacked_data, z))
+  
+        make_plot(real_data_batches, stacked_data, num_batches, epoch+1, num_epochs, stacked_noise)
