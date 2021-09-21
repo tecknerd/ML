@@ -27,7 +27,7 @@ matplotlib.use("Agg")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Directory to save plots
-save_directory = './running-plots/'
+save_directory = './running-plots/no-sigmoid/'
 
 # defining generator class
 class generator(nn.Module):
@@ -141,7 +141,7 @@ def make_plot(real_data, fdata, num_batches, epoch, num_epochs, noise)-> None:
             plt.scatter(noise[index], value, c='orange', s=5)
 
             # plots generated x-value vs. generated u-value
-            # plt.scatter(fdata[index,0], value, c='green', s=5)
+            plt.scatter(fdata[index,0], value, c='green', s=5)
 
 
 
@@ -157,7 +157,7 @@ def make_plot(real_data, fdata, num_batches, epoch, num_epochs, noise)-> None:
 batch_size = 20
 num_batches = 20
 
-LAMBDA = 10 # The gradient penalty coefficient 
+LAMBDA = 0.10 # The gradient penalty coefficient 
 
 vxn  = 10000 # number of points
 vx =np.linspace(-1, 1, vxn)  # creates evenly spaces points
@@ -218,7 +218,9 @@ num_epochs = 20000
 critic_iter = 10 
 
 # learning rate
-lr = 5e-5 
+lr = 5e-5
+
+# decay rates for adaptive gradient algorithm and RMS prop
 betas = (0, 0.5)
 
 # discriminator model
