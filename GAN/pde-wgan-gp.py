@@ -27,7 +27,7 @@ matplotlib.use("Agg")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Directory to save plots
-save_directory = './running-plots/no-sigmoid/'
+save_directory = './running-plots/sigmoid-uniform-range-test-x2/'
 
 # defining generator class
 class generator(nn.Module):
@@ -66,7 +66,8 @@ class discriminator(nn.Module):
             nn.LeakyReLU(),
             nn.Linear(1000, 1000),
             nn.LeakyReLU(),
-            nn.Linear(1000, 1)
+            nn.Linear(1000, 1),
+            # nn.Sigmoid()
         )
         
     def forward(self, z):
@@ -108,8 +109,14 @@ def Du(x,u):
 def get_noise_tensor(size:int)-> np.ndarray:
     ''' Creates a tensor of random points from an normal distribution'''
 
-    noise = torch.randn(batch_size*1,1) # create some random noise
-    noisev = torch.FloatTensor(noise).reshape(batch_size,1) # make noise into a tensor
+    # Gets random numbers from a normal distribution N~(0,1)
+    # noise = torch.randn(batch_size*1,1) # create some random noise
+
+    # Freezes generator
+    # noisev = autograd.Variable(noise)
+
+    # Gets random variables from a uniform distribution with boundaries and freezes generator
+    noisev = autograd.Variable(torch.FloatTensor(batch_size*1,1).uniform_(left_bndry, right_bndry))
     noisev.requires_grad=True
 
     return noisev
@@ -157,10 +164,12 @@ def make_plot(real_data, fdata, num_batches, epoch, num_epochs, noise)-> None:
 batch_size = 20
 num_batches = 20
 
-LAMBDA = 0.10 # The gradient penalty coefficient 
+LAMBDA = 10 # The gradient penalty coefficient 
 
 vxn  = 10000 # number of points
-vx =np.linspace(-1, 1, vxn)  # creates evenly spaces points
+left_bndry = -1
+right_bndry = 1
+vx =np.linspace(left_bndry, right_bndry, vxn)  # creates evenly spaces points
 
 real_data_batches = [] # will consist of random points x, u(x), and f(x)
 
@@ -221,7 +230,7 @@ critic_iter = 10
 lr = 5e-5
 
 # decay rates for adaptive gradient algorithm and RMS prop
-betas = (0, 0.5)
+betas = (0.0, 0.2)
 
 # discriminator model
 dis = discriminator().to(device=device) 
@@ -305,7 +314,7 @@ for epoch in range(num_epochs):
         # print('Iter-{}; D_loss: {}; G_loss: {}'.format(epoch, dis_loss.data.numpy(), gen_loss.data.numpy()), file=open('./wgan-out.txt','a'))
 
     # Make plots every few iterations.  Originally had it at every 10 iterations.
-    if (epoch+1) % 100 == 0 or epoch == num_epochs-1:   
+    if (epoch+1) % 10 == 0 or epoch == num_epochs-1:   
         # Create noise and generated data to plot
         stacked_noise = np.empty([0,0])
         stacked_data = np.empty([0,0])
