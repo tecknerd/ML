@@ -27,7 +27,7 @@ matplotlib.use("Agg")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Directory to save plots
-save_directory = './running-plots/sigmoid-uniform-range-test-x2/'
+save_directory = './running-plots/'
 
 # defining generator class
 class generator(nn.Module):
