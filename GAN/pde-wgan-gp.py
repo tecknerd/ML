@@ -29,6 +29,35 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Directory to save plots
 save_directory = './running-plots/'
 
+
+#####  Adjustable parameters  #####
+
+# Batch parameters
+batch_size = 20
+num_batches = 20
+
+
+# x-value parameters
+vxn  = 10000 # number of points
+left_bndry = -1
+right_bndry = 1
+
+
+# Gradient penalty parameters
+LAMBDA = 10 # The gradient penalty coefficient 
+
+
+# Training parameters
+num_epochs = 25000
+critic_iter = 10 # Number of times to train the discriminator/ critic before training the generator
+
+
+# Adam Optimizer parameters
+lr = 5e-5 # learning rate
+betas = (0, 0.2) # decay rates for adaptive gradient algorithm and RMS prop
+
+#####  End Adjustable parameters  #####
+
 # defining generator class
 class generator(nn.Module):
     
@@ -46,7 +75,13 @@ class generator(nn.Module):
             nn.Linear(1000, 1000),
             nn.BatchNorm1d(1000),
             nn.ReLU(),
-            nn.Linear(1000, 2)
+            nn.Linear(1000, 1000),
+            nn.BatchNorm1d(1000),
+            nn.ReLU(),
+            nn.Linear(1000, 1000),
+            nn.BatchNorm1d(1000),
+            nn.ReLU(),
+            nn.Linear(1000, 2),
         )
         
     def forward(self, x):
@@ -70,7 +105,6 @@ class discriminator(nn.Module):
             nn.Linear(1000, 1000),
             nn.LeakyReLU(),
             nn.Linear(1000, 1),
-            # nn.Sigmoid()
         )
         
     def forward(self, z):
@@ -82,13 +116,13 @@ class discriminator(nn.Module):
 
 
 def u_true(x):
-    # u = x**2
-    u = np.sin(x)**2
+    u = x**2
+    # u = np.sin(x)**2
     return u
 
 def f_true(x):
-    # f = 4*x
-    f = np.sin(2.0*x)+2.0*x*np.cos(2*x)
+    f = 4*x
+    # f = np.sin(2.0*x)+2.0*x*np.cos(2*x)
     return f
 
 def flat(x):
@@ -102,7 +136,7 @@ def Du(x,u):
         dx   \\     dx  //
     '''
     u_x = grad(flat(u), x, create_graph=True, allow_unused=True)[0] #nth_derivative(flat(u), wrt=x, n=1)
-    xv =x[:,0].reshape(batch_size,1)
+    xv =x[:,0].reshape(x.shape[0],1)
     z = u_x*xv
     u_xx = grad(flat(z), x, create_graph=True, allow_unused=True)[0] #nth_derivative(flat(u), wrt=x, n=1)
     f = u_xx
@@ -114,13 +148,14 @@ def get_noise_tensor(size:int)-> np.ndarray:
 
     # Gets random numbers from a normal distribution N~(0,1)
     # Freezes generator
-    # noisev = autograd.Variable(torch.randn(batch_size*1,1))
+    # noisev = autograd.Variable(torch.randn(size*1,1))
 
     # Gets random variables from a uniform distribution with boundaries and freezes generator
-    # noisev = autograd.Variable(torch.FloatTensor(batch_size*1,1).uniform_(left_bndry, right_bndry))
+    # noisev = autograd.Variable(torch.FloatTensor(size*1,1).uniform_(left_bndry, right_bndry))
     
     # The standard uniform distribution
-    noisev = autograd.Variable(torch.FloatTensor(batch_size*1,1).uniform_(0, 1))
+    noisev = autograd.Variable(torch.FloatTensor(size*1,1).uniform_(-1, 1))
+    # noisev = autograd.Variable(torch.FloatTensor(size*1,1).uniform_(-1, 1))
 
     noisev.requires_grad=True
 
@@ -136,44 +171,25 @@ def check_directory_else_make(dir: str)-> None:
         os.makedirs(dir)
 
 
-def make_plot(real_data, fdata, num_batches, epoch, num_epochs, noise)-> None:
+def make_plot(real_data, fdata, x_col, y_col, epoch, title="Plot", color1:str='black', color2:str='red' )-> None:
     ''' Plots the real and generated data points'''
 
-    # plot the real data
+
     for i in range(num_batches):
-        x = real_data_batches[i][:, 0].detach().numpy()
-        y = real_data_batches[i][:, 1].detach().numpy()
-        plt.scatter(x,y, color = 'b', s=5)
-
-    # plot the generated data
-    for index, value in enumerate(fdata[:,1]):
-        if -0.1 < value < 1.1:
-
-            # plots noise as x-value vs. generated u-value
-            # plt.scatter(noise[index], value, c='orange', s=5)
-
-            # plots generated x-value vs. generated u-value
-            plt.scatter(fdata[index,0], value, c='green', s=5)
-
-
+        batch = real_data_batches[i]
+        plt.scatter(batch[:, x_col].detach().numpy(), batch[:, y_col].detach().numpy(), c=color1, s=5)
+    
+    plt.scatter(fdata[:, x_col].to(device='cpu').detach().numpy(), fdata[:,y_col].to(device='cpu').detach().numpy(), c=color2, s=5)
 
     # Make the directory to save plots if it doesn't exits
     check_directory_else_make(save_directory)
-    
+
     # save plot to directory
-    plt.title("WGAN-GP-" + str(num_epochs))
-    plt.savefig(save_directory+str(num_epochs)+'-iter-'+str(epoch))
+    plt.title(title)
+    plt.savefig(save_directory + title)
     plt.figure().clear()
-
-
-batch_size = 20
-num_batches = 20
-
-LAMBDA = 10 # The gradient penalty coefficient 
-
-vxn  = 10000 # number of points
-left_bndry = 0 #-1
-right_bndry = np.pi #1
+  
+  
 vx =np.linspace(left_bndry, right_bndry, vxn)  # creates evenly spaces points
 
 real_data_batches = [] # will consist of random points x, u(x), and f(x)
@@ -230,17 +246,6 @@ def calc_gradient_penalty(netD, real_data, fake_data):
     return gradient_penalty
 
 
-num_epochs = 20000
-
-# Number of times to train the discriminator/ critic before training the generator
-critic_iter = 10 
-
-# learning rate
-lr = 5e-5
-
-# decay rates for adaptive gradient algorithm and RMS prop
-betas = (0.0, 0.2)
-
 # discriminator model
 dis = discriminator().to(device=device) 
 
@@ -252,8 +257,6 @@ optimizerD = optim.Adam(dis.parameters(), lr=lr, betas=betas)
 
 # optimizer for the generator
 optimizerG = optim.Adam(gen.parameters(), lr=lr, betas=betas)
-
-# negative_critic_losses = []
 
 # Trains the model 
 for epoch in range(num_epochs):
@@ -316,25 +319,23 @@ for epoch in range(num_epochs):
     # Update G
     optimizerG.step()
 
-    # negative_critic_losses.append(-dis_loss.data.numpy())
-
     if (epoch+1) % 10 == 0 or epoch == num_epochs-1:        
         print('Epoch: {}/{}; Critic_loss: {}; G_loss: {}' 
             .format(epoch+1, num_epochs, dis_loss.to(device='cpu').data.numpy(), gen_loss.to(device='cpu').data.numpy()))
         # print('Iter-{}; D_loss: {}; G_loss: {}'.format(epoch, dis_loss.data.numpy(), gen_loss.data.numpy()), file=open('./wgan-out.txt','a'))
 
     # Make plots every few iterations.  Originally had it at every 10 iterations.
-    if (epoch+1) % 100 == 0 or epoch == num_epochs-1:   
-        # Create noise and generated data to plot
-        stacked_noise = np.empty([0,0])
-        stacked_data = np.empty([0,0])
-        for i in range(batch_size):
-            noisev = get_noise_tensor(batch_size)
-            noisev.requires_grad=True
-            fout = gen(noisev)
-            z = fout.to(device='cpu').detach().numpy()
+    if (epoch+1) % 100 == 0 or epoch == 0 or epoch == num_epochs-1:
 
-            stacked_noise = noisev.detach().numpy() if i == 0 else np.vstack((stacked_noise, noisev.detach().numpy()))
-            stacked_data = z if i == 0 else np.vstack((stacked_data, z))
-  
-        make_plot(real_data_batches, stacked_data, num_batches, epoch+1, num_epochs, stacked_noise)
+        noisev = get_noise_tensor(10*batch_size)
+        gen_data  = gen(noisev) # pass random noise with to generator
+        fout = Du(noisev, gen_data[:,1]).to(device=device)
+        fdata = torch.cat((gen_data, fout),1)
+
+        # Make the u(x) plot
+        u_plot_title = "WGAN-GP " + str(epoch+1) + " of " + str(num_epochs) + "epochs" + "-u(x)"
+        make_plot(real_data, fdata, 0, 1, epoch, title=u_plot_title, color1='blue', color2='green')
+
+        # Make the f(x) plot
+        f_plot_title = "WGAN-GP " + str(epoch+1) + " of " + str(num_epochs) + "epochs" + "-f(x)"
+        make_plot(real_data, fdata, 0, 2, epoch, title=f_plot_title)
