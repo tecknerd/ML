@@ -106,21 +106,20 @@ class PhysicsInformedNN:
         Y = tf.add(tf.matmul(H, W), b)
         return Y
             
-    def net_u(self, x,y,t):  
+    def net_u(self,x,y,t):  
         u = self.neural_net(tf.concat([x,y,t],1), self.weights, self.biases)
         return u
     
     def net_f(self, x,y,t):
         alpha_1 = self.alpha_1        
         #lambda_2 = tf.exp(self.lambda_2)
-        u = self.net_u(x,t)
+        u = self.net_u(x,y,t)
         u_t = tf.gradients(u, t)[0]
         u_x = tf.gradients(u, x)[0]
         u_y = tf.gradients(u, y)[0]
         u_xx = tf.gradients(u_x, x)[0]
         u_yy = tf.gradients(u_y, y)[0]
         f = u_t - alpha_1*(u_xx + u_yy)
-        
         return f
     
     def callback(self, loss, alpha_1):
@@ -176,8 +175,8 @@ if __name__ == "__main__":
     
     #X, T = np.meshgrid(x,t)
     
-    #X_star = np.hstack((X.flatten()[:,None], T.flatten()[:,None]))
-    u_star = output.flatten()[:,None]              
+    X_star = input #input is coming from the 2Dheat.py file
+    u_star = output.flatten()[:,None]   #output is coming from the 2Dheat.py file           
 
     # Domain bounds
     lb = input.min(0)
@@ -193,25 +192,25 @@ if __name__ == "__main__":
     u_train = u_star[idx,:]
     
     model = PhysicsInformedNN(X_u_train, u_train, layers, lb, ub)
-    model.train(10000)#You can run fro small iterations first, to see whether it is running properly.
+    model.train(1000)#You can run fro small iterations first, to see whether it is running properly.
 
     
     u_pred, f_pred = model.predict(X_star)
             
     error_u = np.linalg.norm(u_star-u_pred,2)/np.linalg.norm(u_star,2)
     
-    U_pred = griddata(X_star, u_pred.flatten(), (X, T), method='cubic')
+    U_pred = griddata(X_star, u_pred.flatten(), (X, T), method='cubic')#This graphing part yet to be figure out.
         
-    lambda_1_value = model.sess.run(model.lambda_1)
-    lambda_2_value = model.sess.run(model.lambda_2)
-    lambda_2_value = np.exp(lambda_2_value)
+    alpha_1_value = model.sess.run(model.alpha_1)
+    #lambda_2_value = model.sess.run(model.lambda_2)
+    #lambda_2_value = np.exp(lambda_2_value)
     
-    error_lambda_1 = np.abs(lambda_1_value - 1.0)*100
-    error_lambda_2 = np.abs(lambda_2_value - nu)/nu * 100
+    error_alpha1 = np.abs(alpha_1_value - 2)*100
+    #error_lambda_2 = np.abs(lambda_2_value - nu)/nu * 100
     
     print('Error u: %e' % (error_u))    
-    print('Error l1: %.5f%%' % (error_lambda_1))                             
-    print('Error l2: %.5f%%' % (error_lambda_2))  
+    print('Error l1: %.5f%%' % (error_alpha_1))                             
+    #print('Error l2: %.5f%%' % (error_lambda_2))  
     
     ######################################################################
     ########################### Noisy Data ###############################
